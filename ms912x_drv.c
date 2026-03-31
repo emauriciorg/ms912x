@@ -41,6 +41,12 @@ static int ms912x_usb_resume(struct usb_interface *interface)
 	return drm_mode_config_helper_resume(dev);
 }
 
+static void ms912x_put_dmadev(struct ms912x_device *ms912x)
+{
+	if (ms912x->dmadev)
+		put_device(ms912x->dmadev);
+}
+
 /*
  * FIXME: Dma-buf sharing requires DMA support by the importing device.
  *        This function is a workaround to make USB devices work as well.
@@ -177,13 +183,13 @@ static void ms912x_merge_rects(struct drm_rect *dest, struct drm_rect *r1,
 static void ms912x_pipe_update(struct drm_simple_display_pipe *pipe,
 			       struct drm_plane_state *old_state)
 {
+	struct ms912x_device *ms912x;
 	struct drm_plane_state *state = pipe->plane.state;
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(5, 11, 0)
 	struct drm_shadow_plane_state *shadow_plane_state =
 		to_drm_shadow_plane_state(state);
-	struct ms912x_device *ms912x;
 	struct drm_rect current_rect, rect;
 
-#if LINUX_VERSION_CODE >= KERNEL_VERSION(5, 11, 0)
 	if (drm_atomic_helper_damage_merged(old_state, state, &current_rect)) {
 		/* The device double buffers, so we need to send the update
 		 * rects of the last two frames.
@@ -200,31 +206,41 @@ static void ms912x_pipe_update(struct drm_simple_display_pipe *pipe,
 		}
 	}
 #else
+	/* Old kernels do not provide drm shadow plane state helpers used above. */
 	if (!state->fb)
 		return;
 
-	current_rect.x1 = 0;
-	current_rect.y1 = 0;
-	current_rect.x2 = state->fb->width;
-	current_rect.y2 = state->fb->height;
-
 	ms912x = to_ms912x(state->fb->dev);
-	ms912x_merge_rects(&rect, &current_rect, &ms912x->update_rect);
-	if (ms912x_fb_send_rect(state->fb, &shadow_plane_state->data[0], &rect))
-		ms912x_merge_rects(&ms912x->update_rect, &ms912x->update_rect,
-				   &rect);
-	else
-		ms912x->update_rect = current_rect;
+	ms912x->update_rect.x1 = 0;
+	ms912x->update_rect.y1 = 0;
+	ms912x->update_rect.x2 = state->fb->width;
+	ms912x->update_rect.y2 = state->fb->height;
 #endif
 }
+
+#if LINUX_VERSION_CODE < KERNEL_VERSION(5, 8, 0)
+static enum drm_mode_status
+ms912x_pipe_mode_valid_compat(struct drm_crtc *crtc,
+			       const struct drm_display_mode *mode)
+{
+	return ms912x_pipe_mode_valid(NULL, mode);
+}
+#endif
 
 static const struct drm_simple_display_pipe_funcs ms912x_pipe_funcs = {
 	.enable = ms912x_pipe_enable,
 	.disable = ms912x_pipe_disable,
 	.check = ms912x_pipe_check,
+#if LINUX_VERSION_CODE < KERNEL_VERSION(5, 8, 0)
+	.mode_valid = ms912x_pipe_mode_valid_compat,
+#else
 	.mode_valid = ms912x_pipe_mode_valid,
+#endif
 	.update = ms912x_pipe_update,
+
+#ifdef DRM_GEM_SIMPLE_DISPLAY_PIPE_SHADOW_PLANE_FUNCS
 	DRM_GEM_SIMPLE_DISPLAY_PIPE_SHADOW_PLANE_FUNCS,
+#endif
 };
 
 static const uint32_t ms912x_pipe_formats[] = {
@@ -238,17 +254,30 @@ static int ms912x_usb_probe(struct usb_interface *interface,
 	struct ms912x_device *ms912x;
 	struct drm_device *dev;
 
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(5, 9, 0)
 	ms912x = devm_drm_dev_alloc(&interface->dev, &driver,
 				    struct ms912x_device, drm);
 	if (IS_ERR(ms912x))
 		return PTR_ERR(ms912x);
+#else
+	ms912x = devm_kzalloc(&interface->dev, sizeof(*ms912x), GFP_KERNEL);
+	if (!ms912x)
+		return -ENOMEM;
+
+	ret = drm_dev_init(&ms912x->drm, &driver, &interface->dev);
+	if (ret)
+		return ret;
+#endif
 
 	ms912x->intf = interface;
 	dev = &ms912x->drm;
 
+	ms912x->dmadev = NULL;
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(5, 9, 0)
 	ms912x->dmadev = usb_intf_get_dma_device(interface);
+#endif
 	if (!ms912x->dmadev)
-		drm_warn(dev,
+		dev_warn(dev->dev,
 			 "buffer sharing not supported"); /* not an error */
 
 	ret = ms912x_drmm_mode_config_init(dev);
@@ -287,7 +316,9 @@ static int ms912x_usb_probe(struct usb_interface *interface,
 	if (ret)
 		goto err_free_request_1;
 
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(5, 11, 0)
 	drm_plane_enable_fb_damage_clips(&ms912x->display_pipe.plane);
+#endif
 
 	drm_mode_config_reset(dev);
 
@@ -308,7 +339,7 @@ err_free_request_1:
 err_free_request_0:
 	ms912x_free_request(&ms912x->requests[0]);
 err_put_device:
-	put_device(ms912x->dmadev);
+	ms912x_put_dmadev(ms912x);
 	return ret;
 }
 
@@ -324,7 +355,7 @@ static void ms912x_usb_disconnect(struct usb_interface *interface)
 	drm_atomic_helper_shutdown(dev);
 	ms912x_free_request(&ms912x->requests[0]);
 	ms912x_free_request(&ms912x->requests[1]);
-	put_device(ms912x->dmadev);
+	ms912x_put_dmadev(ms912x);
 	ms912x->dmadev = NULL;
 }
 
