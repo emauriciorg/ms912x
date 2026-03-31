@@ -16,7 +16,9 @@
 #include <drm/drm_file.h>
 #include <drm/drm_gem_framebuffer_helper.h>
 #include <drm/drm_gem_shmem_helper.h>
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(5, 9, 0)
 #include <drm/drm_managed.h>
+#endif
 #include <drm/drm_ioctl.h>
 #include <drm/drm_probe_helper.h>
 #include <drm/drm_print.h>
@@ -249,7 +251,7 @@ static int ms912x_usb_probe(struct usb_interface *interface,
 		drm_warn(dev,
 			 "buffer sharing not supported"); /* not an error */
 
-	ret = drmm_mode_config_init(dev);
+	ret = ms912x_drmm_mode_config_init(dev);
 	if (ret)
 		goto err_put_device;
 

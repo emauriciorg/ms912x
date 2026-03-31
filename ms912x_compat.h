@@ -7,6 +7,8 @@
 #include <linux/types.h>
 #include <linux/version.h>
 
+#include <drm/drm_mode_config.h>
+
 #if LINUX_VERSION_CODE < KERNEL_VERSION(5, 18, 0)
 #include <linux/dma-buf.h>
 
@@ -70,6 +72,16 @@ static inline void ms912x_drm_gem_fb_end_cpu_access(struct drm_framebuffer *fb,
 #define ms912x_drm_fbdev_setup drm_fbdev_generic_setup
 #else
 #define ms912x_drm_fbdev_setup drm_fbdev_ttm_setup
+#endif
+
+#if LINUX_VERSION_CODE < KERNEL_VERSION(5, 9, 0)
+static inline int ms912x_drmm_mode_config_init(struct drm_device *dev)
+{
+	drm_mode_config_init(dev);
+	return 0;
+}
+#else
+#define ms912x_drmm_mode_config_init drmm_mode_config_init
 #endif
 
 #endif
