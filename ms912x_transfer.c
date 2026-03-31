@@ -205,14 +205,14 @@ int ms912x_fb_send_rect(struct drm_framebuffer *fb, const struct iosys_map *map,
 
 	drm_dev_enter(drm, &idx);
 
-	ret = drm_gem_fb_begin_cpu_access(fb, DMA_FROM_DEVICE);
+	ret = ms912x_drm_gem_fb_begin_cpu_access(fb, DMA_FROM_DEVICE);
 	if (ret < 0)
 		goto dev_exit;
 
 	ret = ms912x_fb_xrgb8888_to_yuv422(current_request->transfer_buffer,
 					   map, fb, rect);
 	
-	drm_gem_fb_end_cpu_access(fb, DMA_FROM_DEVICE);
+	ms912x_drm_gem_fb_end_cpu_access(fb, DMA_FROM_DEVICE);
 	if (ret < 0)
 		goto dev_exit;
 
