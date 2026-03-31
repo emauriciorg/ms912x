@@ -4,6 +4,7 @@
 #include <drm/drm_edid.h>
 #include <drm/drm_modeset_helper_vtables.h>
 #include <drm/drm_probe_helper.h>
+#include <linux/version.h>
 
 #include "ms912x.h"
 
@@ -26,7 +27,21 @@ static int ms912x_connector_get_modes(struct drm_connector *connector)
 {
 	int ret;
 	struct ms912x_device *ms912x = to_ms912x(connector->dev);
+
+#if LINUX_VERSION_CODE < KERNEL_VERSION(5, 19, 0)
+	struct edid *edid;
+
+	edid = drm_do_get_edid(connector, ms912x_read_edid, ms912x);
+	if (!edid)
+		return 0;
+
+	drm_connector_update_edid_property(connector, edid);
+	ret = drm_add_edid_modes(connector, edid);
+	kfree(edid);
+	return ret;
+#else
 	const struct drm_edid *edid;
+
 	edid = drm_edid_read_custom(connector, ms912x_read_edid, ms912x);
 	if (!edid)
 		return 0;
@@ -39,6 +54,7 @@ static int ms912x_connector_get_modes(struct drm_connector *connector)
 edid_free:
 	drm_edid_free(edid);
 	return ret;
+#endif
 }
 
 static enum drm_connector_status ms912x_detect(struct drm_connector *connector,

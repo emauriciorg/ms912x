@@ -1,13 +1,18 @@
 // SPDX-License-Identifier: GPL-2.0-only
 
 #include <linux/module.h>
+#include <linux/version.h>
 
 #include <drm/drm_atomic_helper.h>
 #include <drm/drm_crtc_helper.h>
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(5, 11, 0)
 #include <drm/drm_damage_helper.h>
+#endif
 #include <drm/drm_drv.h>
 #include <drm/drm_fb_helper.h>
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(5, 19, 0)
 #include <drm/drm_fbdev_ttm.h>
+#endif
 #include <drm/drm_file.h>
 #include <drm/drm_gem_atomic_helper.h>
 #include <drm/drm_gem_framebuffer_helper.h>
@@ -70,7 +75,7 @@ static const struct drm_driver driver = {
 };
 
 static const struct drm_mode_config_funcs ms912x_mode_config_funcs = {
-	.fb_create = drm_gem_fb_create_with_dirty,
+	.fb_create = ms912x_drm_gem_fb_create_with_dirty,
 	.atomic_check = drm_atomic_helper_check,
 	.atomic_commit = drm_atomic_helper_commit,
 };
@@ -177,6 +182,7 @@ static void ms912x_pipe_update(struct drm_simple_display_pipe *pipe,
 	struct ms912x_device *ms912x;
 	struct drm_rect current_rect, rect;
 
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(5, 11, 0)
 	if (drm_atomic_helper_damage_merged(old_state, state, &current_rect)) {
 		/* The device double buffers, so we need to send the update
 		 * rects of the last two frames.
@@ -192,6 +198,23 @@ static void ms912x_pipe_update(struct drm_simple_display_pipe *pipe,
 			ms912x->update_rect = current_rect;
 		}
 	}
+#else
+	if (!state->fb)
+		return;
+
+	current_rect.x1 = 0;
+	current_rect.y1 = 0;
+	current_rect.x2 = state->fb->width;
+	current_rect.y2 = state->fb->height;
+
+	ms912x = to_ms912x(state->fb->dev);
+	ms912x_merge_rects(&rect, &current_rect, &ms912x->update_rect);
+	if (ms912x_fb_send_rect(state->fb, &shadow_plane_state->data[0], &rect))
+		ms912x_merge_rects(&ms912x->update_rect, &ms912x->update_rect,
+				   &rect);
+	else
+		ms912x->update_rect = current_rect;
+#endif
 }
 
 static const struct drm_simple_display_pipe_funcs ms912x_pipe_funcs = {
@@ -275,7 +298,7 @@ static int ms912x_usb_probe(struct usb_interface *interface,
 	if (ret)
 		goto err_free_request_1;
 
-	drm_fbdev_ttm_setup(dev, 0);
+	ms912x_drm_fbdev_setup(dev, 0);
 
 	return 0;
 
