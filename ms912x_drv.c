@@ -14,7 +14,6 @@
 #include <drm/drm_fbdev_ttm.h>
 #endif
 #include <drm/drm_file.h>
-#include <drm/drm_gem_atomic_helper.h>
 #include <drm/drm_gem_framebuffer_helper.h>
 #include <drm/drm_gem_shmem_helper.h>
 #include <drm/drm_managed.h>
